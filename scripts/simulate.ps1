@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('all', 'led', 'capture')]
+    [ValidateSet('all', 'capture', 'board')]
     [string]$Target = 'all',
 
     [switch]$Wave,
@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if ($Wave -and $Target -eq 'all') {
-    throw 'With -Wave, choose -Target led or -Target capture.'
+    throw 'With -Wave, choose -Target capture or -Target board.'
 }
 
 function Find-HdlTool {
@@ -45,15 +45,15 @@ $iverilog = Find-HdlTool 'iverilog'
 $vvp = Find-HdlTool 'vvp'
 $gtkwave = if ($Wave) { Find-HdlTool 'gtkwave' } else { $null }
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$targets = if ($Target -eq 'all') { @('led', 'capture') } else { @($Target) }
+$targets = if ($Target -eq 'all') { @('capture', 'board') } else { @($Target) }
 $designs = @{
-    led = @{
-        Top = 'tb_led_blink'
-        Sources = @('rtl/led_blink.sv', 'tb/tb_led_blink.sv')
-    }
     capture = @{
         Top = 'tb_logic_analyzer'
         Sources = @('rtl/logic_analyzer.sv', 'tb/tb_logic_analyzer.sv')
+    }
+    board = @{
+        Top = 'tb_de1_soc_top'
+        Sources = @('rtl/logic_analyzer.sv', 'rtl/de1_soc_top.sv', 'tb/tb_de1_soc_top.sv')
     }
 }
 $originalProcessPath = $env:Path
@@ -94,7 +94,7 @@ try {
         }
     }
 
-    Write-Host 'Commands completed. See testbench output for checks; SKELETON ONLY is not a functional pass.'
+    Write-Host 'Commands completed. Capture and board targets print PASS after checks.'
 }
 finally {
     $env:Path = $originalProcessPath

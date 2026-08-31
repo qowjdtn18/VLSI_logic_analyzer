@@ -1,4 +1,10 @@
 # Generated simulation executables, waveforms, and other reproducible output
 /build/
+
+# Generated Quartus compilation databases, reports, and programming files
+/quartus/db/
+/quartus/incremental_db/
+/quartus/output_files/
+/quartus/*.qws
 /AGENTS.md
 docs/simulation-setup.md

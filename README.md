@@ -1,34 +1,42 @@
 # VLSI Logic Analyzer
 
-A personal project to build a logic analyzer with the DE1-SoC: sample digital signals, store them, and inspect the captured data on a PC. The project starts with small experiments and records the FPGA design, verification, and board bring-up work.
+A personal FPGA project to build a logic analyzer with the DE1-SoC: sample
+digital signals, store them, and inspect the captured data on a PC. The project
+starts with an internal test pattern before any external GPIO is connected.
 
-The [logbook](docs/logbook.md) keeps the questions, attempts, results, and next decisions in a conversational voice for the portfolio. This README describes the current project and how to use it. All project files use Canadian English.
+The [logbook](docs/logbook.md) records the questions, attempts, results, and
+decisions that led here. This README describes the current design and how to
+use it. All project files use Canadian English.
+
+The initial LED bring-up experiment now lives in a separate sibling
+`LED_blink` repository. This repository keeps the capture core, analyzer board
+wrapper, and future PC transfer work.
 
 ## Current status
 
-- A DE1-SoC has been purchased. Receipt and board operation have not yet been recorded.
-- `led_blink` is implemented as a small counter example. The capture core now implements manual start, sample storage, stop-on-full, and registered reading after completion.
-- The capture testbench compares stored data and checks control timing, restart, reset, and address boundaries. The LED testbench still has verification TODOs; normal termination alone is not a functional pass.
-- Icarus Verilog capture checks passed for CHANNELS/DEPTH pairs 1/1, 8/3, 3/5, 8/8, and 8/1024. Separate temporary checks verified LED reset and toggle timing for `TOGGLE_CYCLES=1,3,4,5`. Both testbenches produce VCD files that GTKWave can read. Physical hardware remains unverified.
-- There is no Quartus project, board wrapper, pin/timing constraints, or PC application yet.
-- The specifications and structure below are **initial proposals**, subject to implementation and measurement.
+- The user identifies the board as a DE1-SoC Rev. F. The physical part marking
+  has not been independently recorded.
+- `logic_analyzer` implements manual start, sample storage, stop-on-full, and
+  registered readback after capture.
+- The core testbench checks stored data, control timing, restart, reset, and
+  address boundaries. Icarus parameter checks have passed for CHANNELS/DEPTH
+  pairs 1/1, 8/3, 3/5, 8/8, and 8/1024.
+- `de1_soc_top` provides a Rev. F internal-pattern demonstration with a proposed
+  1 MSa/s sample enable. Its scaled wrapper simulation passes.
+- The analyzer Quartus project contains the Cyclone V device, Rev. F/G pins,
+  and 50 MHz timing constraint. A complete analyzer Quartus compile, timing
+  review, programming result, and physical capture remain pending.
+- There is no PC readout application yet.
 
-## Where to start
-
-The first goal is to **blink one board LED with a custom design**. Once programming and clock operation are confirmed, add capture logic. Start with the FPGA fabric; leave HPS (the ARM processor) and Linux integration for later.
-
-1. **Check the board and development environment.** Confirm the board revision and FPGA part number, then obtain the matching Terasic manual, examples, and pin information. Prepare a Quartus edition/version that supports the exact Cyclone V device, its device package, and the USB-Blaster driver. Record the versions here. Check that Programmer recognizes the board, using the board documentation for pins and switch settings.
-2. **Blink an LED.** Use a counter driven by the board clock, with pin assignments and clock timing constraints. Completion means synthesizing, placing and routing, programming the board, observing the LED, and recording the clock, pins, and tool versions used.
-3. **Capture an internal signal.** Sample an internal counter or test pattern at regular intervals and store it in on-chip memory. In simulation, the values and sample count must match expectations, and writes must stop when the buffer is full.
-4. **Read the capture on a PC.** Transfer data after capture and inspect it as CSV or VCD. Choose the transfer path at this stage. Completion means recovering a known board-generated pattern on the PC with the correct order and sample count.
-5. **Add external GPIO and a trigger.** Check voltages and wiring before measuring a slow external signal. Add capture on a selected channel's rising edge. Completion means capturing a known external pattern and explaining the trigger position and sample interval.
+The channel count, sample rate, and capture depth below are initial design
+choices, not measured hardware capabilities.
 
 ## Proposed first version
 
-| Item | Initial proposal |
+| Item | Initial choice |
 | --- | --- |
-| Input | Eight digital channels, starting with an internal test pattern |
-| Sampling | 1,000,000 samples per second (1 MSa/s, a 1 µs interval) |
+| Input | Eight digital channels, beginning with an internal pattern |
+| Sampling | 1,000,000 samples per second (1 MSa/s, a 1 us interval) |
 | Capture depth | 1,024 samples = 8,192 bits = 1 KiB of raw data |
 | Capture window | About 1.024 ms at the proposed settings |
 | Operation | Capture once, stop, then transfer to the PC |
@@ -36,159 +44,161 @@ The first goal is to **blink one board LED with a custom design**. Once programm
 | Storage | FPGA on-chip memory |
 | PC output | CSV or VCD files |
 
-The sample rate is not the maximum measurable signal frequency. Short pulses between samples can be missed, so begin with pulses much longer than the sample interval.
+The sample rate is not the maximum measurable signal frequency. A transition
+between sample instants can be missed, so initial external tests should use
+pulses much longer than the sample interval.
 
-Continuous streaming, pre-trigger storage, protocol decoding, a GUI, external SDRAM, and HPS integration are outside the first version's scope. These numbers provide a starting point, not a performance guarantee.
+Continuous streaming, pre-trigger storage, protocol decoding, a GUI, external
+SDRAM, and HPS integration are outside the first version's scope.
 
-## Proposed data flow
+## Data flow
 
 ```text
-Internal test pattern or GPIO input
-                |
-                v
-Input handling -> Sampler -> Capture memory -> Read/transfer -> PC file/waveform
+Internal pattern or GPIO input
+              |
+              v
+Input handling -> Sampler -> Capture memory -> Read/transfer -> PC file
                      ^              ^
                      |              |
-                Sample enable   Capture control/trigger
+                Sample enable   Capture control
 ```
 
-- Begin with one FPGA clock and consider using a clock enable to set the sample interval.
-- External inputs can be asynchronous to the FPGA clock. Account for synchronization latency, metastability, and differences in when channels are observed. Synchronizing each channel does not guarantee that a multibit value is captured coherently.
-- Separate the capture rate from the PC transfer rate. The first version stops capturing before reading stored data.
-- If UART is selected, first verify that the chosen path is accessible from the FPGA. Do not assume a board USB connector provides an arbitrary FPGA data interface.
+- Begin with one FPGA clock and use a clock enable to set the sample interval.
+- External inputs can be asynchronous to the FPGA clock. Account for
+  synchronization latency, metastability, and multibit coherence before using
+  GPIO signals.
+- Separate capture timing from PC transfer. The first version stops capturing
+  before data is read.
+- Do not assume that a board USB connector is an arbitrary FPGA data interface.
+  Select and verify the transfer path before building the host application.
 
 ## Before connecting external signals
 
-- Check the board manual and schematics for GPIO pins, I/O voltage, and permitted input ranges. Do not connect external signals before these are confirmed.
-- Do not connect 5 V signals, negative voltages, or RS-232 directly to GPIO. Prepare appropriate level shifting and input protection where needed.
-- Confirm the ground connection between the board and the device under test. Configure measurement pins as inputs to avoid output contention.
-- Validate the internal pattern first. Do not treat this project's inputs as protected commercial instrument inputs.
+- Check the Rev. F/G manual and schematics for GPIO pins, I/O voltage, and
+  permitted input ranges.
+- Do not connect 5 V, negative voltage, or RS-232 signals directly to GPIO.
+- Connect grounds between the board and the device under test.
+- Configure measurement pins as inputs to avoid output contention.
+- Validate the internal pattern before attaching an external source.
 
 ## Repository files
 
-This table lists existing project files. Update it and the related descriptions whenever a file is added, moved, or removed.
+Generated simulation and Quartus output directories are excluded from Git and
+are not listed individually.
 
 | File | Purpose |
 | --- | --- |
-| [README.md](README.md) | Project purpose, starting sequence, current status, file guide, and documentation rules |
-| [AGENTS.md](AGENTS.md) | Canadian English, README/logbook maintenance, verification, and documentation rules |
-| [docs/logbook.md](docs/logbook.md) | Chronological narrative of questions, suggestions, actual attempts, and results |
-| [docs/simulation-setup.md](docs/simulation-setup.md) | Windows simulator installation, PATH configuration, testbench execution, and waveform viewing |
-| [docs/logic-analyzer.md](docs/logic-analyzer.md) | Capture core architecture, parameters, ports, timing, verification, and limitations |
-| [scripts/simulate.ps1](scripts/simulate.ps1) | Compile/run helper for both testbenches, with optional GTKWave launch |
-| [rtl/led_blink.sv](rtl/led_blink.sv) | Implemented LED counter example with synchronous reset and a configurable toggle interval |
-| [rtl/logic_analyzer.sv](rtl/logic_analyzer.sv) | Manual-start capture buffer with sample enable, stop-on-full, and registered readback |
-| [tb/tb_led_blink.sv](tb/tb_led_blink.sv) | LED module connection, nominal 50 MHz clock model, reset, waveform output, and check TODOs |
-| [tb/tb_logic_analyzer.sv](tb/tb_logic_analyzer.sv) | Parameterized capture checks for stored data, control timing, reads, restart, and reset |
-| [.gitignore](.gitignore) | Excludes generated output under `build/` |
-| [.gitattributes](.gitattributes) | Normalizes line endings for Git text files |
+| [README.md](README.md) | Project status, architecture, workflow, and file inventory |
+| [AGENTS.md](AGENTS.md) | Canadian English, documentation, hardware, and verification rules |
+| [docs/logbook.md](docs/logbook.md) | Chronological narrative of questions, attempts, results, and decisions |
+| [docs/simulation-setup.md](docs/simulation-setup.md) | Windows simulator setup and individual commands |
+| [docs/logic-analyzer.md](docs/logic-analyzer.md) | Capture-core parameters, ports, timing, verification, and limitations |
+| [docs/board-bring-up.md](docs/board-bring-up.md) | Rev. F internal-pattern build, programming, and observation workflow |
+| [rtl/logic_analyzer.sv](rtl/logic_analyzer.sv) | Manual-start capture buffer and registered readback |
+| [rtl/de1_soc_top.sv](rtl/de1_soc_top.sv) | Rev. F internal-pattern board wrapper controlled by keys and switches |
+| [tb/tb_logic_analyzer.sv](tb/tb_logic_analyzer.sv) | Self-checking capture-core testbench |
+| [tb/tb_de1_soc_top.sv](tb/tb_de1_soc_top.sv) | Self-checking scaled board-wrapper testbench |
+| [scripts/simulate.ps1](scripts/simulate.ps1) | PowerShell simulation and optional GTKWave helper |
+| [quartus/vlsi_logic_analyzer.qpf](quartus/vlsi_logic_analyzer.qpf) | Analyzer Quartus project entry point |
+| [quartus/vlsi_logic_analyzer.qsf](quartus/vlsi_logic_analyzer.qsf) | Device, source, Rev. F/G pin, and I/O-standard assignments |
+| [quartus/de1_soc_top.sdc](quartus/de1_soc_top.sdc) | 50 MHz clock constraint and asynchronous board-I/O exceptions |
+| [.gitignore](.gitignore) | Generated simulation and Quartus output exclusions |
+| [.gitattributes](.gitattributes) | Git text-file line-ending normalization |
 
-`rtl/` holds design sources, `tb/` holds simulation-only sources, `scripts/` holds execution helpers, and `docs/` holds records and technical guides. `quartus/` (project, pin, and timing constraints) and `host/` (PC tools) are proposed directories that do not exist yet. Add board integration files after confirming the revision and pins.
+`host/` remains a proposed directory and does not exist yet.
 
-## Reading and extending the examples
+## Capture core
 
-Sources use SystemVerilog (`.sv`). Both RTL headers describe implemented behaviour. The LED testbench's `TODO(TB-LED-...)` checks remain open. If an interface changes, update the comments, documentation, and testbench together.
+The [capture-core guide](docs/logic-analyzer.md) documents every parameter,
+port, edge transition, read latency, and current limitation. The implemented
+flow is:
 
-1. `rtl/led_blink.sv`: read the counter example. The counter runs from 0 to `TOGGLE_CYCLES - 1`, then clears and toggles the LED. Reset clears both registers on a rising edge. The first toggle occurs on the `TOGGLE_CYCLES`-th rising edge after reset is released; a full LED period takes twice that many clocks. The parameter must be at least 1, and the counter width is kept at one bit for that boundary case.
-2. `tb/tb_led_blink.sv`: compare the reset value, first toggle, and subsequent intervals automatically. The current setting is `TOGGLE_CYCLES=10`; also try a small value such as 4 and the boundary value of 1.
-3. `rtl/logic_analyzer.sv`: follow the memory declaration, reset, capture, start, and read branches. The [capture core guide](docs/logic-analyzer.md) explains each port and shows an edge-by-edge example.
-4. `tb/tb_logic_analyzer.sv`: follow the known-pattern captures and expected-value comparisons. The default uses eight samples; repeat the checks at other sizes with the documented parameter overrides.
+1. Apply active-low synchronous reset.
+2. Pulse `start` for one rising edge.
+3. While `busy` is high, each rising edge with `sample_en=1` stores
+   `sample_in`.
+4. The final accepted sample clears `busy` and raises `done`.
+5. After completion, assert `read_en` with a valid address. `read_data` and
+   `read_valid` update on the rising edge.
 
-Both modules assume an **active-low synchronous reset** sampled on `posedge clk`. All capture inputs must already be synchronous to `clk`. External GPIO synchronization, a sample-enable generator, trigger detection, and UART are not included. The testbench drives `sample_en` directly. Apply reset before using either module. Capture memory is not cleared by reset, but read access is blocked until a new capture completes.
+Capture memory is not cleared by reset, but read access remains blocked until a
+new capture completes. External-input synchronization, triggers, continuous
+capture, and a transfer interface are not implemented.
 
-The RTL assigns no physical board pins or clock frequency. The LED testbench models a nominal 50 MHz clock (20 ns period); the capture testbench still uses a 10 ns simulation clock. These clocks and small parameters do not implement or validate the 1 MSa/s proposal.
+## Rev. F internal-pattern demonstration
 
-### LED clock reference
+The [board wrapper](rtl/de1_soc_top.sv) generates a one-cycle sample enable
+every 50 clocks. With a nominal 50 MHz board clock, that proposes a 1 MHz sample
+rate. An internal eight-bit value increments once per accepted sample and fills
+1,024 memory locations.
 
-The [Terasic DE1-SoC User Manual dated 2019-01-28, section 3.5, pp. 21-22](https://hps.hs-regensburg.de/scm39115/homepage/education/labs/Lab_ElectronicBoards/DE1-SoC_UserManual.pdf) (university-hosted copy) documents nominal 50 MHz FPGA clock inputs, including `CLOCK_50`. This is the reference for the LED simulation, not confirmation of this project's physical board revision or clock operation. Check the actual revision against the matching [Terasic resources](https://www.terasic.com.tw/cgi-bin/page/archive.pl?CategoryNo=205&Language=English&No=836&PartNo=4) before choosing pins or programming settings.
-
-- At 50 MHz, one clock period is `1 / 50_000_000 s = 20 ns = 20_000 ps`.
-- In the LED testbench, `timescale 1ns/1ps` makes `#10` a 10 ns delay. Inverting the clock every 10 ns produces a 20 ns period.
-- The testbench override `TOGGLE_CYCLES=10` gives 200 ns between LED toggles and a 400 ns full LED period after reset.
-- The RTL default `TOGGLE_CYCLES=25_000_000` would give 0.5 s between toggles and a 1 s full LED period with a 50 MHz input clock.
-
-Changing `#10`, `timescale`, or the LED counter does not configure a physical clock source. Board integration still needs a wrapper connecting the verified clock input to `clk`, revision-verified pin assignments, and timing constraints describing the clock period. No Quartus clock/pin settings or board measurements have been completed.
-
-## Running simulations
-
-The [simulation setup guide](docs/simulation-setup.md) covers Windows installation, PATH configuration, waveform viewing, and individual compile commands. The following environment was checked on 2026-08-30.
-
-| Item | Verified environment |
+| Board control | Function |
 | --- | --- |
-| OS / shell | Windows x64 / PowerShell 7.6.4 |
-| Compiler | Icarus Verilog 13.0 stable, MSYS2 UCRT64 package `1~13.0-2` |
-| Simulation runtime | Icarus `vvp` 13.0 stable |
-| Waveform viewer | GTKWave 3.3.127, MSYS2 UCRT64 package `3.3.127-1` |
-| Tool directory on this PC | `C:\msys64\ucrt64\bin` (added to the user PATH) |
+| KEY0 | Active-low reset |
+| KEY1 | Start or restart capture |
+| SW9..SW0 | Read address after capture |
+| LEDR8 | Busy |
+| LEDR9 | Done |
+| LEDR7..LEDR0 | Sample value at the selected address |
 
-Run both testbenches from PowerShell at the repository root:
+The full pin, compile, programming, and observation sequence is in the
+[Rev. F board bring-up guide](docs/board-bring-up.md). The analyzer project has
+not yet completed this physical workflow.
+
+## Run simulations
+
+The verified local environment is Windows PowerShell 7.6.4, Icarus Verilog
+13.0, and GTKWave 3.3.127. Run both testbenches from the repository root:
 
 ```powershell
 .\scripts\simulate.ps1
 ```
 
-To run one testbench and open GTKWave, use the command for that target:
+Run one testbench and open its waveform:
 
 ```powershell
-.\scripts\simulate.ps1 -Target led -Wave
 .\scripts\simulate.ps1 -Target capture -Wave
+.\scripts\simulate.ps1 -Target board -Wave
 ```
 
-The script compiles in SystemVerilog mode (`-g2012`) and runs `vvp` only if compilation succeeds. It can find the default MSYS2 installation and temporarily adds the tool's `bin` directory to the process PATH so the internal compiler can find its DLLs. It restores PATH and the working directory on exit. It does not change the PowerShell execution policy.
-
-The checks completed so far are:
-
-| Testbench | Execution result | Waveform |
+| Testbench | Result | Waveform |
 | --- | --- | --- |
-| `tb_led_blink` | Compiled and terminated at 900 ns with `SKELETON ONLY` (50 MHz clock, `TOGGLE_CYCLES=10`) | Generated `build/tb_led_blink.vcd`; GTKWave loaded it |
-| `tb_logic_analyzer` | Directed checks passed at 786 ns with `PASS` (CHANNELS=8, DEPTH=8) | Generated `build/tb_logic_analyzer.vcd`; GTKWave loaded it |
+| `tb_logic_analyzer` | Directed checks passed at 786 ns for CHANNELS=8, DEPTH=8 | `build/tb_logic_analyzer.vcd` |
+| `tb_de1_soc_top` | Reset, start, divider, capture, switch, and LED checks passed at 1,451 ns | `build/tb_de1_soc_top.vcd` |
 
-GTKWave loading was checked with `--exit`. This does not verify every interactive UI feature. Compiled files (`.vvp`), waveforms, and setup check output belong under `build/` and are excluded from Git.
-
-Inspection of the updated LED VCD confirmed a 20 ns clock period, reset setting the LED to 0 at 10 ns, and LED toggles at 250, 450, 650, and 850 ns. Reset is released at 60 ns, so the first toggle is on the tenth active rising edge. This checks the current simulation trace; it is not a board measurement or a completed self-checking testbench.
-
-Separate temporary LED checks passed with Icarus Verilog for `TOGGLE_CYCLES=1,3,4,5`: reset value, first toggle, repeated intervals, reset during operation, no reset response before a rising edge, and timing after reset is released again. That harness is local under ignored `build/`; it does not fill in or replace the author's testbench TODOs.
-
-The capture testbench prints `PASS` only after expected-value and control checks finish; mismatches call `$fatal(1, ...)`. Its [verification scope and limitations](docs/logic-analyzer.md#verification-and-limits) are documented separately. The LED testbench still prints `SKELETON ONLY` because its automatic comparisons remain TODOs. Neither VCD generation nor simulation success proves FPGA timing or physical operation. Quartus synthesis and board programming are separate, unfinished steps.
+Separate parameter sweeps passed for capture configurations 1/1, 8/3, 3/5,
+8/8, and 8/1024. Simulation does not validate Quartus placement, board timing,
+physical pins, or analogue signal integrity.
 
 ## Documentation and Doxygen preparation
 
-Keep README as the project's entry point. Update relevant sections when files, functionality, interfaces, or build steps change. Distinguish planned work, simulation results, and behaviour verified on the board.
+Keep README current when files, functionality, interfaces, or workflows
+change. Keep the logbook in the author's first-person voice and preserve the
+actual sequence of uncertainty, attempts, failures, corrections, and results.
 
-All project documents, comments, TODOs, and messages use Canadian English. Preserve filenames, code identifiers, commands, official names, and link targets.
+For each RTL module, document its purpose, parameters, port directions and
+widths, clock and reset behaviour, timing and latency, limitations, and related
+testbench.
 
-Update the logbook when a project question, explanation that changes understanding, design choice, experiment, or result develops, unless the user explicitly excludes that session. Apply `humanizer:humanizer` and `soo-application-voice` to write in the author's first-person voice. Follow the actual conversation and evidence from the question to the next attempt. Distinguish suggestions from actions, never invent an experiment or failure, and append later findings rather than erase earlier uncertainty.
+A future Doxyfile will include README and Markdown under `docs/`. Doxygen does
+not list Verilog or SystemVerilog among its default languages, so comments in
+`.sv` files must not be presented as automatic module extraction. Validate an
+HDL filter before adding that workflow.
 
-For each new RTL module, document:
+## Progress
 
-- Purpose and data flow.
-- Clock, reset polarity, and synchronous/asynchronous behaviour.
-- Parameters, port directions/widths/meaning, and conditions for valid data.
-- Sampling, trigger, buffer completion timing, and latency.
-- Limitations, the associated testbench, and verified results.
-
-A future `Doxyfile` will collect README and Markdown files under `docs/` into HTML documentation. The configuration and documentation build command do not exist yet.
-
-Doxygen can turn Markdown into documentation pages. Verilog/SystemVerilog are not listed among its default supported languages, so Doxygen-style comments in `.v` or `.sv` files alone must not be treated as automatic module/port extraction. If HDL extraction becomes necessary, validate a separate filter with a small example. Until then, use Markdown module documentation. See [Doxygen language support](https://www.doxygen.nl/manual/starting.html) and [Markdown processing](https://www.doxygen.nl/manual/markdown.html).
-
-When documentation tooling is added, record the tool version, command, and output path here. Keep generated HTML separate from source and define the appropriate Git ignore rules.
-
-## Progress checklist
-
-- [x] Define the project direction and documentation rules
-- [x] Add LED/capture RTL and testbench skeletons
-- [x] Record simulator versions and compile/run the skeletons
-- [x] Simulate the capture core with known patterns, readback, and boundary checks
-- [ ] Record board revision, FPGA part number, and board tool versions
-- [ ] Confirm board detection in Programmer
-- [ ] Verify LED blink on the board
-- [ ] Integrate an internal pattern source on the board and verify captured values
-- [ ] Recover captured data on a PC
-- [ ] Verify external GPIO capture and a rising-edge trigger
+- [x] Define the capture direction and documentation rules
+- [x] Implement and simulate the capture core
+- [x] Add and simulate the Rev. F internal-pattern wrapper
+- [x] Separate the LED bring-up experiment into its own repository
+- [ ] Complete the analyzer Quartus compile and review timing
+- [ ] Program and verify the internal-pattern capture on the board
+- [ ] Transfer captured samples to the PC
+- [ ] Verify external GPIO input handling and a rising-edge trigger
 - [ ] Add the Doxygen documentation build
 
 ## References
 
-- [Terasic DE1-SoC resources](https://www.terasic.com.tw/cgi-bin/page/archive.pl?CategoryNo=205&Language=English&No=836&PartNo=4): manuals, examples, and pin information for the matching board revision
-- [Doxygen getting started](https://www.doxygen.nl/manual/starting.html): supported languages and configuration/build steps
-- [Doxygen Markdown guide](https://www.doxygen.nl/manual/markdown.html): including design documents as pages
+- [Terasic DE1-SoC Rev. F/G resources](https://www.terasic.com.tw/cgi-bin/page/archive.pl?CategoryNo=165&Language=English&No=836&PartNo=4)
+- [Doxygen getting started](https://www.doxygen.nl/manual/starting.html)
+- [Doxygen Markdown guide](https://www.doxygen.nl/manual/markdown.html)
