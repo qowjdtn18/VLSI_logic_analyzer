@@ -1,0 +1,4 @@
+# Generated simulation executables, waveforms, and other reproducible output
+/build/
+/AGENTS.md
+docs/simulation-setup.md
